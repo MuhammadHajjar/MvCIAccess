@@ -1,0 +1,8 @@
+# Do not translate line endings, ever.
+#
+# UE4SS reads mods.txt one line at a time and matches the name against a folder.
+# If git checks that file out with CRLF on someone else's machine, the mod name
+# picks up a trailing carriage return and UE4SS silently fails to load the mod,
+# with no error anywhere. That is the same class of bug as a UTF-8 BOM in the
+# same file, which already cost an evening once. Keep bytes exactly as committed.
+* -text

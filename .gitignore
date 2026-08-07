@@ -1,0 +1,42 @@
+# Personal save data. NEVER commit these, they are Muhammad's own game saves.
+save_backup_*/
+*.sav
+
+# Files the mod writes while it runs (the real ones live in %LOCALAPPDATA%\MvCIAccess;
+# these are leftovers from development in this folder).
+speech.txt
+heartbeat.txt
+announce_last.txt
+announce_log.txt
+unknown_icons.txt
+MvCIAccess_error.txt
+charnames.txt
+
+# Inspector (development-only discovery tool) scratch files.
+inspector_cmd.txt
+inspector_out.txt
+inspector_history.txt
+
+# Build output. The installer is published as a release asset, not committed.
+build/dist/
+build/work/
+
+# Python
+__pycache__/
+*.pyc
+
+# Old development helpers, superseded (the speech companion now starts itself).
+run_speech.bat
+LUA_PROOF.txt
+
+# Superseded prototype of the speech companion. The shipping one is
+# build/src/MvCIAccessSpeech.py; keeping both around only confuses people.
+/speak_companion.py
+
+# Stray copy of the NVDA client. The one that ships lives in build/payload/.
+/nvdaControllerClient64.dll
+
+# Working drafts kept locally.
+PLAN.md
+FORUM_POST.txt
+RELEASE_NOTES_DRAFT.md
