@@ -18,7 +18,7 @@ import urllib.request
 
 APP_NAME = "MvCIAccess"
 VERSION = "1.1.0"
-GITHUB_REPO = "REPLACE_WITH/YOUR_REPO"   # set before publishing
+GITHUB_REPO = "MuhammadHajjar/MvCIAccess"   # set before publishing
 APPID = "493840"
 GAME_SUBPATH = os.path.join("steamapps", "common",
                             "MARVEL VS. CAPCOM INFINITE", "MVCI", "Binaries", "Win64")

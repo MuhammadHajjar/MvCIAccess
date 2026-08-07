@@ -38,7 +38,9 @@ that was completely impossible before. The fighting itself is still on you.
 
 ## Installing
 
-Download `MvCIAccess-Setup.exe` from the Releases page and run it. It finds your
+Download `MvCIAccess-Setup.exe` from the
+[latest release](https://github.com/MuhammadHajjar/MvCIAccess/releases/latest)
+and run it. It finds your
 Steam copy of the game by itself, including on a second drive, asks before it
 changes anything, and that is it. Run it again later and it offers to update or
 remove. Removing only deletes the mod's own files, it never touches the game.
@@ -101,10 +103,11 @@ python build/release.py 1.1.0
 That syntax checks every Lua file, copies the current scripts into the payload,
 stamps the version into the installer, and builds `build/dist/MvCIAccess-Setup.exe`.
 
-To enable the built-in update check, pass your repository:
+Pass the repository to keep the built-in update check pointed at the right
+place:
 
 ```bash
-python build/release.py 1.1.0 --repo OWNER/REPO
+python build/release.py 1.1.0 --repo MuhammadHajjar/MvCIAccess
 ```
 
 Note that everything the mod loads is written UTF-8 **without** a BOM. A BOM in
@@ -129,8 +132,9 @@ build/payload/                   exactly what gets installed into the game
 This is not stable and it is certainly full of bugs that have not been hit yet.
 
 The most useful bug report is **a screen that says nothing at all**, because
-those are usually quick to add once someone knows they exist. Open an issue and
-say which mode you were in and how you got there.
+those are usually quick to add once someone knows they exist.
+[Open an issue](https://github.com/MuhammadHajjar/MvCIAccess/issues) and say
+which mode you were in and how you got there.
 
 If you can read code, even better. This was built by someone who cannot see what
 he was building, and it needs to grow.
