@@ -1481,6 +1481,86 @@ local function cmd_class(class)
     return out
 end
 
+-- The character-select sub-screens: the costume / color picker, the Infinity
+-- Stone picker, and their rows. These are the screens that still read nothing.
+--
+-- Deliberately ONE command instead of five, because every scan costs a real trip
+-- out of the game and back. It prints, in order:
+--   1. every UserWidget class currently VISIBLE, so that if the class guesses
+--      below are wrong we still learn the correct names from the same dump
+--   2. every instance of each candidate class, and whether it is visible
+--   3. a property enumeration + subtree for the visible ones
+--   4. all visible text
+--
+-- enumerate_all reads property VALUES. Doing that in bulk across everything on
+-- screen is what hard crashed the game in probeall/probevis, and pcall cannot
+-- catch it. Here it is capped to MAX_ENUM objects, which keeps it to the same
+-- single-object pattern screendump has always used safely.
+local CHARSUB_CLASSES = {
+    "WD_Menu_Con_C", "WD_Menu_Gem_Button_C", "WD_GemDetail_C",
+    "WD_ListItem00_C", "WD_ListItem01_C", "WD_SelectTeamList_C",
+}
+local CHARSUB_MAX_ENUM = 4
+
+local function cmd_charsub()
+    local out = { "charsub: character-select sub-screens" }
+
+    -- 1) what is actually on screen right now
+    out[#out + 1] = "== VISIBLE UserWidget classes =="
+    local counts = {}
+    local all = try(function() return FindAllOf("UserWidget") end) or {}
+    for i = 1, #all do
+        if is_visible(all[i]) == true then
+            local cn = class_name(all[i])
+            counts[cn] = (counts[cn] or 0) + 1
+        end
+    end
+    local names = {}
+    for cn in pairs(counts) do names[#names + 1] = cn end
+    table.sort(names)
+    if #names == 0 then
+        out[#out + 1] = "  (nothing visible)"
+    else
+        for _, cn in ipairs(names) do
+            out[#out + 1] = "  " .. cn .. " x" .. counts[cn]
+        end
+    end
+
+    -- 2 and 3) the candidate classes
+    local enumed = 0
+    for _, cls in ipairs(CHARSUB_CLASSES) do
+        local list = try(function() return FindAllOf(cls) end) or {}
+        out[#out + 1] = "== " .. cls .. "  instances=" .. #list .. " =="
+        local any_visible = false
+        for i = 1, #list do
+            local w = list[i]
+            local vis = is_visible(w)
+            out[#out + 1] = "  [" .. i .. "] visible=" .. tostring(vis) ..
+                "  " .. full_name(w)
+            if vis == true then
+                any_visible = true
+                if enumed < CHARSUB_MAX_ENUM then
+                    enumed = enumed + 1
+                    for _, ln in ipairs(enumerate_all(w)) do out[#out + 1] = ln end
+                end
+            end
+        end
+        if any_visible then
+            for _, ln in ipairs(cmd_tree((cls:gsub("_C$", "")), 60)) do
+                out[#out + 1] = ln
+            end
+        end
+    end
+    if enumed >= CHARSUB_MAX_ENUM then
+        out[#out + 1] = "(enumeration capped at " .. CHARSUB_MAX_ENUM ..
+            " objects on purpose; bulk value reads crash the game)"
+    end
+
+    out[#out + 1] = "== visible text =="
+    for _, ln in ipairs(cmd_text(nil, true)) do out[#out + 1] = ln end
+    return out
+end
+
 -- Dispatch (runs on game thread) -----------------------------------------
 
 local function run_command(cmd)
@@ -1492,6 +1572,8 @@ local function run_command(cmd)
         out = cmd_scan()
     elseif verb == "snapshot" or verb == "widgets" then
         out = cmd_snapshot()
+    elseif verb == "charsub" then
+        out = cmd_charsub()
     elseif verb == "findall" and rest ~= "" then
         out = cmd_findall(rest)
     elseif verb == "find" and rest ~= "" then

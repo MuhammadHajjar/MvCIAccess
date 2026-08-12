@@ -1,5 +1,22 @@
 # MvCIAccess changelog
 
+## 1.2.0 (2026-08-12)
+
+- The costume and color panel that opens after you pick a fighter now reads.
+  You hear the row and its value, so "Costume, Normal" and "Color, 2".
+- The Infinity Stone picker now reads. The stones are described rather than
+  named: the game never puts a stone's name in text anywhere on that screen,
+  only a picture and a description, so you hear what the stone does. Names are
+  not invented, for the same reason the roster never guessed a fighter's name.
+- Fixed the reader priority bug that made both of those screens silent in the
+  first place. Once a screen matched it was pinned and became the only one
+  checked, so character select kept answering for panels that had opened on top
+  of it. Anything outranking the pinned screen is now re-checked every tick.
+
+Known issue: the mod still costs more game thread time than it should, which
+shows up as occasional sluggishness. Developer builds now measure it per reader,
+and that measurement is what the next release is aimed at.
+
 ## 1.1.0 (2026-08-07)
 
 - All 6 DLC characters are now named on character select: Sigma, Monster Hunter,

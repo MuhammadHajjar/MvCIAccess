@@ -1,0 +1,193 @@
+-- screen_charsub.lua
+-- The two sub-screens that open ON TOP of character select, both silent until now:
+--
+--   WD_Menu_Con_C         the costume / color panel, after you pick a fighter
+--   WD_Menu_Gem_Button_C  the Infinity Stone picker
+--
+-- Neither is a normal option list, which is why the generic reader in
+-- screen_options.lua never matched them (they fail its has_list() check).
+--
+-- COSTUME PANEL. FocusMenu is the row index, and the rows are exposed directly
+-- as named properties rather than as panel children:
+--     FocusMenu 0 -> WD_ListItem00   "Costume", value in TextBlock_Subitem
+--     FocusMenu 1 -> WD_ListItem01   "Color",   value in ColorFocus (0 based)
+-- Verified 2026-08-12: FocusMenu was 1 at the same moment the color row's own
+-- bFocus was true, which is what pins FocusMenu down as the selection.
+--
+-- STONE PICKER. The picker widget carries NO selection index whatsoever, only
+-- buttons and canvases. What actually tracks the cursor is WD_GemDetail_C, whose
+-- text is rewritten to the highlighted stone's description. Confirmed by two
+-- dumps one cursor move apart: the text went from "Unleashes a different
+-- elemental attack..." to "Raises attack power...".
+--
+-- There are two detail panels, 1P and 2P, and the inactive one is filled with
+-- icon-font placeholder glyphs, so we take whichever one holds real words.
+--
+-- The stones are never NAMED in text anywhere on this screen, only described.
+-- So we read the description rather than invent a name, the same rule the
+-- character grid follows: a confident wrong name is worse than no name.
+
+local M = {}
+local ann = nil
+local last_key = nil
+
+local function safe(fn)
+    local ok, res = pcall(fn)
+    if ok then return res end
+    return nil
+end
+
+local function valid(o)
+    return o and safe(function() return o:IsValid() end) and true or false
+end
+
+local function visible(o)
+    return o ~= nil and safe(function() return o:IsVisible() end) == true
+end
+
+local function ftext(v)
+    if v == nil then return nil end
+    if type(v) == "string" then return v end
+    local s = safe(function() return v:ToString() end)
+    if type(s) == "string" and s ~= "" then return s end
+    return nil
+end
+
+local function text_of(w)
+    if not w then return nil end
+    return ftext(safe(function() return w:GetText() end))
+end
+
+local function num_prop(obj, name)
+    local v = safe(function() return obj[name] end)
+    if type(v) == "number" then return v end
+    if type(v) == "userdata" then
+        local n = safe(function() return v:get() end)
+        if type(n) == "number" then return n end
+    end
+    return nil
+end
+
+local function all_valid(cls)
+    local out = {}
+    local arr = safe(function() return FindAllOf(cls) end)
+    if not arr then return out end
+    for i = 1, #arr do
+        if valid(arr[i]) then out[#out + 1] = arr[i] end
+    end
+    return out
+end
+
+-- Collapse the newlines the game puts inside its description text, so it speaks
+-- as one sentence instead of being chopped up.
+local function clean(s)
+    if not s then return nil end
+    s = s:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+    if s == "" then return nil end
+    return s
+end
+
+-- The inactive detail panel holds icon-font placeholders that render as repeated
+-- "Àg" glyphs. Real copy has ASCII letters and none of that.
+local function looks_real(s)
+    if not s or s == "" then return false end
+    if s:find("\195\128", 1, true) then return false end  -- UTF-8 "À"
+    return s:find("%a") ~= nil
+end
+
+-- ---------------------------------------------------------------- costume
+
+local function costume_panel()
+    local list = all_valid("WD_Menu_Con_C")
+    local first = nil
+    for i = 1, #list do
+        if visible(list[i]) then
+            first = first or list[i]
+            if num_prop(list[i], "teamNo") == 0 then return list[i] end
+        end
+    end
+    return first
+end
+
+local function announce_costume(force)
+    local w = costume_panel()
+    if not w then return false end
+
+    local idx = num_prop(w, "FocusMenu") or 0
+    local row = safe(function()
+        if idx == 0 then return w.WD_ListItem00 end
+        return w.WD_ListItem01
+    end)
+    if not row then return false end
+
+    local label = clean(text_of(safe(function() return row.TextBlock_Label end)))
+    local value
+    if idx == 0 then
+        value = clean(text_of(safe(function() return row.TextBlock_Subitem end)))
+    else
+        -- ColorFocus is 0 based; the chips are labelled 1 upwards on screen.
+        local c = num_prop(row, "ColorFocus")
+        if c then value = tostring(c + 1) end
+    end
+
+    local key = "con#" .. tostring(idx) .. "#" .. tostring(value)
+    if (not force) and key == last_key then return true end
+    last_key = key
+
+    local msg = label or ("item " .. tostring(idx))
+    if value then msg = msg .. ", " .. value end
+    if ann then ann.speak(msg, true) end
+    return true
+end
+
+-- ------------------------------------------------------------- stone picker
+
+local function announce_gem(force)
+    local open = false
+    for _, w in ipairs(all_valid("WD_Menu_Gem_Button_C")) do
+        if visible(w) then open = true break end
+    end
+    if not open then return false end
+
+    local storm, surge
+    for _, d in ipairs(all_valid("WD_GemDetail_C")) do
+        if visible(d) then
+            local t = clean(text_of(safe(function() return d.TriggerEffectText end)))
+            local p = clean(text_of(safe(function() return d.PossessionEffectText end)))
+            if looks_real(t) or looks_real(p) then
+                if looks_real(t) then storm = t end
+                if looks_real(p) then surge = p end
+                break
+            end
+        end
+    end
+    if not storm and not surge then return false end
+
+    local parts = {}
+    if storm then parts[#parts + 1] = "Storm, " .. storm end
+    if surge then parts[#parts + 1] = "Surge, " .. surge end
+    local msg = table.concat(parts, " ")
+
+    local key = "gem#" .. msg
+    if (not force) and key == last_key then return true end
+    last_key = key
+
+    if ann then ann.speak(msg, true) end
+    return true
+end
+
+-- ------------------------------------------------------------------- public
+
+function M.announce_now(force)
+    if announce_costume(force) then return true end
+    if announce_gem(force) then return true end
+    last_key = nil   -- neither is open, so re-entering announces again
+    return false
+end
+
+function M.init(announcer)
+    ann = announcer
+    return M
+end
+
+return M

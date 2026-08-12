@@ -18,6 +18,10 @@ that was completely impossible before. The fighting itself is still on you.
 - Stage select
 - Character select, with the fighter's name, roster side, row and column, for
   all 36 fighters including the 6 DLC characters
+- The costume and color panel that opens once you pick a fighter
+- The Infinity Stone picker. The stones are *described* rather than named,
+  because the game never puts their names in text anywhere on that screen, only
+  a picture and a description. So you hear what the stone does, not "Power"
 - Pause menu in Training, Arcade and Versus
 - Story mode's pause panel, with win conditions and active buffs
 - The Command List, with the input notation decoded from the game's icons, so
@@ -28,8 +32,6 @@ that was completely impossible before. The fighting itself is still on you.
 - The actual match. No health, no meter, no timer, no combo counter.
 - Online submenus. The Online menu itself reads, the screens under Ranked,
   Casual and Lobby do not.
-- The costume, color and Infinity Stone pickers on character select. You can
-  still press through them, they just use the defaults.
 - Collection, so all the art, movies, sound and database screens.
 - Mission Mode.
 - HUD Position, which is a visual layout tool.
@@ -67,12 +69,20 @@ starts itself with the game, there is nothing extra to launch.
 
 ## About the delay
 
-There is some latency, and it is deliberate rather than an oversight. The mod
-inspects the game's live interface from inside the game, which is expensive.
-Polling faster made the game stutter, and at one point lock up. In a 60 fps
-fighting game a dropped frame is worse than an announcement arriving a moment
-late, so it is tuned down on purpose. If a screen is slow to speak, Ctrl+Shift+A
-reads it instantly.
+There is some latency, and some of it is a deliberate trade rather than an
+oversight. The mod inspects the game's live interface from inside the game,
+which is expensive. Polling faster made the game stutter, and at one point lock
+up. In a 60 fps fighting game a dropped frame is worse than an announcement
+arriving a moment late, so it is tuned down on purpose. If a screen is slow to
+speak, Ctrl+Shift+A reads it instantly.
+
+Some of it is not a trade though, it is just cost that has not been paid down
+yet. Developer builds time every reader, and measured over ~220 seconds of play
+the readers used about 28% of the game thread, with single probes blocking for
+13 to 35 ms against a 16.7 ms frame. The work is dominated by repeated engine
+object lookups that mostly return "my screen is not open". Cutting that down is
+the main open piece of work. Set a `devmode.txt` in the mod's data folder and it
+writes `perf.txt` with per-reader call counts and timings.
 
 ## How it works
 
