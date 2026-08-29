@@ -19,9 +19,11 @@ that was completely impossible before. The fighting itself is still on you.
 - Character select, with the fighter's name, roster side, row and column, for
   all 36 fighters including the 6 DLC characters
 - The costume and color panel that opens once you pick a fighter
-- The Infinity Stone picker. The stones are *described* rather than named,
-  because the game never puts their names in text anywhere on that screen, only
-  a picture and a description. So you hear what the stone does, not "Power"
+- The Infinity Stone picker, naming all six stones and reading what each does.
+  The game never puts a stone's name in text anywhere on that screen, only a
+  picture and a description, so the name is recovered from the description
+  itself. A description that is not recognised is read without a name rather
+  than guessed at
 - Pause menu in Training, Arcade and Versus
 - Story mode's pause panel, with win conditions and active buffs
 - The Command List, with the input notation decoded from the game's icons, so
@@ -107,7 +109,7 @@ Two things are worth knowing if you want to work on this:
 You need Python 3.9 or newer with PyInstaller.
 
 ```bash
-python build/release.py 1.1.0
+python build/release.py 1.2.1
 ```
 
 That syntax checks every Lua file, copies the current scripts into the payload,
@@ -117,7 +119,7 @@ Pass the repository to keep the built-in update check pointed at the right
 place:
 
 ```bash
-python build/release.py 1.1.0 --repo MuhammadHajjar/MvCIAccess
+python build/release.py 1.2.1 --repo MuhammadHajjar/MvCIAccess
 ```
 
 Note that everything the mod loads is written UTF-8 **without** a BOM. A BOM in
@@ -156,6 +158,9 @@ he was building, and it needs to grow.
 - The NVDA controller client, from [NV Access](https://www.nvaccess.org/)
 - Kong on audiogames.net, who owns the DLC and mapped all 6 DLC fighters by ear
   so everyone else gets them for free
+- Xvordan on audiogames.net, who supplied the Infinity Stone names together
+  with each stone's in-game description, which is what made it possible to
+  verify the mapping rather than trust it
 - Everyone in the [audiogames.net thread](https://forum.audiogames.net/) who
   tested and reported
 

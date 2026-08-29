@@ -1,5 +1,17 @@
 # MvCIAccess changelog
 
+## 1.2.1 (2026-08-29)
+
+- All six Infinity Stones are now named on the stone picker: Reality, Power,
+  Space, Time, Mind and Soul. You hear the name first, then what it does.
+  Thanks to Xvordan on audiogames.net, who posted the names alongside the
+  descriptions the mod was already reading. That made it possible to verify the
+  mapping rather than take it on trust: two of the six matched text already
+  captured from the game word for word, and all six were confirmed in game.
+- A stone whose description is not recognised is still read out without a name
+  rather than guessed at, and the unrecognised wording is logged so it can be
+  added later.
+
 ## 1.2.0 (2026-08-12)
 
 - The costume and color panel that opens after you pick a fighter now reads.

@@ -17,7 +17,7 @@ import time
 import urllib.request
 
 APP_NAME = "MvCIAccess"
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 GITHUB_REPO = "MuhammadHajjar/MvCIAccess"   # set before publishing
 APPID = "493840"
 GAME_SUBPATH = os.path.join("steamapps", "common",

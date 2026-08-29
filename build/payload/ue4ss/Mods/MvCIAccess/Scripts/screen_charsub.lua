@@ -23,9 +23,11 @@
 -- There are two detail panels, 1P and 2P, and the inactive one is filled with
 -- icon-font placeholder glyphs, so we take whichever one holds real words.
 --
--- The stones are never NAMED in text anywhere on this screen, only described.
--- So we read the description rather than invent a name, the same rule the
--- character grid follows: a confident wrong name is worse than no name.
+-- The stones are never NAMED in text anywhere on this screen, only described,
+-- so the name is recovered from the description itself (see STONE_SIGNATURES).
+-- A description we do not recognise is read out WITHOUT a name rather than
+-- guessed at, the same rule the character grid follows: a confident wrong name
+-- is worse than no name.
 
 local M = {}
 local ann = nil
@@ -93,6 +95,53 @@ local function looks_real(s)
     if not s or s == "" then return false end
     if s:find("\195\128", 1, true) then return false end  -- UTF-8 "À"
     return s:find("%a") ~= nil
+end
+
+-- Infinity Stone names.
+--
+-- The picker never puts a stone's name in text, only a picture and its two
+-- descriptions, so the name has to be recovered from the description. Each
+-- entry is a distinctive fragment of that stone's Storm (Trigger) line.
+--
+-- Contributed by Xvordan on audiogames.net 2026-08-12. Two of the six were
+-- then checked against text captured from this game here earlier and matched
+-- word for word: the "different elemental attack" line really is Reality, and
+-- the "raises attack power" line really is Power. The other four come from the
+-- same list, given in the same format, alongside those two.
+--
+-- If nothing matches, because the game is in another language or the wording
+-- changed, we read the description with no name rather than announce a wrong
+-- one. An unmatched line is logged once so a signature can be added later.
+local STONE_SIGNATURES = {
+    { "different elemental attack", "Reality Stone" },
+    { "raises attack power",        "Power Stone"   },
+    { "force cage",                 "Space Stone"   },
+    { "active switch speed",        "Time Stone"    },
+    { "hc gauge rises",             "Mind Stone"    },
+    { "revive a fallen partner",    "Soul Stone"    },
+}
+
+local unknown_stones = {}
+
+local function log_unknown_stone(storm)
+    if not storm or unknown_stones[storm] then return end
+    unknown_stones[storm] = true
+    pcall(function()
+        local f = io.open(require("paths").file("unknown_stones.txt"), "a")
+        if not f then return end
+        f:write(storm .. "\n")
+        f:close()
+    end)
+end
+
+local function stone_name(storm)
+    if not storm then return nil end
+    local s = storm:lower()
+    for _, sig in ipairs(STONE_SIGNATURES) do
+        if s:find(sig[1], 1, true) then return sig[2] end
+    end
+    log_unknown_stone(storm)
+    return nil
 end
 
 -- ---------------------------------------------------------------- costume
@@ -167,6 +216,13 @@ local function announce_gem(force)
     if storm then parts[#parts + 1] = "Storm, " .. storm end
     if surge then parts[#parts + 1] = "Surge, " .. surge end
     local msg = table.concat(parts, " ")
+
+    -- Lead with the stone's name whenever it can be recognised. The
+    -- descriptions still follow, since they are what actually tell you what the
+    -- stone does, and speech is interrupted on every cursor move so scanning
+    -- quickly down the list costs nothing.
+    local name = stone_name(storm)
+    if name then msg = name .. ". " .. msg end
 
     local key = "gem#" .. msg
     if (not force) and key == last_key then return true end
