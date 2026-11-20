@@ -17,7 +17,7 @@ import time
 import urllib.request
 
 APP_NAME = "MvCIAccess"
-VERSION = "1.2.1"
+VERSION = "2.0.0"
 GITHUB_REPO = "MuhammadHajjar/MvCIAccess"   # set before publishing
 APPID = "493840"
 GAME_SUBPATH = os.path.join("steamapps", "common",
@@ -292,8 +292,13 @@ def main():
     out("  3. Menus are read automatically. The speech helper starts by itself.")
     out()
     out("In-game keys:")
-    out("  Ctrl+Shift+A   re-read the current selection")
+    out("  Ctrl+Shift+A   re-read the current screen")
     out("  Ctrl+Shift+Z   repeat the last thing spoken")
+    out("  In a fight:")
+    out("  Ctrl+Shift+H   health of both teams")
+    out("  Ctrl+Shift+M   Hyper Combo meter of both teams")
+    out("  Ctrl+Shift+T   time left")
+    out("  Ctrl+Shift+P   where the opponent is")
     out()
     try:
         check_for_update()

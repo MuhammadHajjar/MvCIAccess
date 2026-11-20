@@ -83,10 +83,12 @@ local function array_obj(obj, name, i0)
     return nil, n
 end
 
--- The open key-config screen, or nil.
+local Core = require("core")
+
+-- The open key-config screen, or nil (core.lua's fast lookup, no FindAllOf).
 local function get_conf()
     for _, cls in ipairs(CLASSES) do
-        local arr = safe(function() return FindAllOf(cls) end)
+        local arr = Core.find(cls)
         if arr then
             for i = 1, #arr do
                 local w = arr[i]
@@ -137,6 +139,11 @@ end
 
 function M.announce_now(force)
     return announce(force)
+end
+
+-- Another screen has input: the next time key config opens, announce it afresh.
+function M.closed()
+    last_key = nil
 end
 
 function M.init(announcer)

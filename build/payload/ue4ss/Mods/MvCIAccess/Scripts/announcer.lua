@@ -1,13 +1,19 @@
 -- announcer.lua
 -- Shared speech/output layer for MvCIAccess.
--- Every screen handler hands (name, value, tooltip) style text here.
 -- Two outputs:
 --   1) File bridge (ALWAYS on): writes the latest line to announce_last.txt and
---      appends to announce_log.txt so we can verify menu-reading logic with NVDA
---      (or from the log) before a native speech backend is wired.
+--      appends every line to announce_log.txt (so the reading logic can be
+--      checked from the log), and writes speech.txt for the speech companion.
 --   2) Native speech backend (OPTIONAL): if a Lua-loadable speech module exists
 --      (see speech.lua), route text to it. Absent for now -> file-bridge only.
 -- No fancy punctuation in string literals (ANSI-read mangles em dashes).
+--
+-- speech.txt holds ONE utterance: "<sequence>\n<1|0 interrupt>\n<text>\n". The
+-- companion looks at it every 30 ms and speaks when the sequence changes, so two
+-- writes a few milliseconds apart lose the first. Readers can speak more than
+-- once in a tick (a fight event and a mission task, say), so main.lua brackets
+-- each tick with begin_batch() / flush() and the tick's lines go out as one
+-- write.
 
 local M = {}
 
@@ -19,6 +25,9 @@ local SPEECH_PATH = P.speech   -- IPC for the speech companion
 local last_text = nil
 local backend   = nil       -- table with .speak(text, interrupt) and .name
 local seq       = 0         -- monotonically increasing; companion speaks on change
+
+local batching = false
+local pending_text, pending_interrupt = nil, false
 
 local function write_file(path, mode, s)
     local ok, f = pcall(io.open, path, mode)
@@ -48,40 +57,57 @@ function M.init()
     return M
 end
 
+-- Hand one utterance to the companion (and the native backend, if any).
+local function emit(text, interrupt)
+    seq = seq + 1
+    write_file(SPEECH_PATH, "w", seq .. "\n" .. (interrupt and "1" or "0") .. "\n" .. text .. "\n")
+    if backend then
+        pcall(function() backend.speak(text, interrupt) end)
+    end
+end
+
 -- Speak/announce a line.
 --   text:      string to announce
---   interrupt: true (default) cuts off current speech; false lets it queue and
---              also suppresses exact-duplicate repeats (used for polled reads).
+--   interrupt: true (default) cuts off current speech; false queues behind it.
+-- Callers do their own change detection; nothing is filtered here.
 function M.speak(text, interrupt)
     if text == nil then return end
     text = tostring(text)
     if text == "" then return end
-    if interrupt == false and text == last_text then
-        return -- dedupe repeated polled reads
-    end
+    local cut = (interrupt ~= false)
     last_text = text
 
-    -- 1) file bridge (always)
     write_file(LAST_PATH, "w", text .. "\n")
     write_file(LOG_PATH, "a", os.date("%H:%M:%S") .. "  " .. text .. "\n")
-    -- speech pipe for the Python companion: seq / interrupt / text
-    seq = seq + 1
-    write_file(SPEECH_PATH, "w", seq .. "\n" .. ((interrupt ~= false) and "1" or "0") .. "\n" .. text .. "\n")
     print("[MvCIAccess][say] " .. text)
 
-    -- 2) native speech (when available)
-    if backend then
-        pcall(function() backend.speak(text, interrupt ~= false) end)
+    if not batching then
+        emit(text, cut)
+    elseif cut or not pending_text then
+        -- an interrupting line would cut whatever was queued before it anyway
+        pending_text, pending_interrupt = text, cut
+    else
+        pending_text = pending_text .. " " .. text
+    end
+end
+
+-- Collect everything spoken until flush() into one utterance.
+function M.begin_batch()
+    batching = true
+    pending_text, pending_interrupt = nil, false
+end
+
+function M.flush()
+    batching = false
+    if pending_text then
+        local t, cut = pending_text, pending_interrupt
+        pending_text = nil
+        emit(t, cut)
     end
 end
 
 function M.repeat_last()
-    if last_text then
-        -- force through even though it equals last_text
-        local t = last_text
-        last_text = nil
-        M.speak(t, true)
-    end
+    if last_text then M.speak(last_text, true) end
 end
 
 return M

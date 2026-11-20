@@ -82,18 +82,13 @@ local function array_element(obj, name, i0)
     return nil
 end
 
--- The open command list, or nil.
+local Core = require("core")
+
+-- The open command list, or nil: core.lua's active menu (valid, visible, has
+-- input, nothing open above it). No FindAllOf on every tick.
 local function get_list()
-    local arr = safe(function() return FindAllOf("WD_CommandList_C") end)
-    if not arr then return nil end
-    for i = 1, #arr do
-        local w = arr[i]
-        if valid(w)
-            and safe(function() return w:IsVisible() end) == true
-            and safe(function() return w.IsMenuBaseInput end) == true then
-            return w
-        end
-    end
+    local m = Core.active_menu()
+    if m and m.cls == "WD_CommandList_C" then return m.w end
     return nil
 end
 
@@ -148,7 +143,7 @@ local SEQUENCES = {
     { "%$ff7c%$%$ff7c%$", "down, down" },  -- Ryuenjin, Mighty Smash, Heavenly Slash
 }
 
-local ICON_LOG = [[C:\Users\Muhammad\Documents\MvCI-Access\unknown_icons.txt]]
+local ICON_LOG = require("paths").file("unknown_icons.txt")
 local logged = {}
 
 local function log_unknown(code, ctx, raw)
@@ -244,6 +239,11 @@ end
 
 function M.announce_now(force)
     return announce(force)
+end
+
+-- Another screen has input: the next time the list opens, announce it afresh.
+function M.closed()
+    last_key = nil
 end
 
 function M.init(announcer)

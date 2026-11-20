@@ -1,6 +1,6 @@
 -- screen_title.lua
 -- Main-menu reader for MvC:Infinite.
--- Structure discovered live (see memory mvci-accessibility-target):
+-- Structure discovered live:
 --   WD_MainMenu_C_0 . IndexFocus  = selected item index (0..itemMax-1)
 --   WD_MainMenu_C_0 . itemMax     = number of items (8)
 --   WD_MainMenuItem_C_N . index   = that item's index

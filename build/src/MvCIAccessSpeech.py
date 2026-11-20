@@ -10,6 +10,7 @@ the user never has to manage it.
 """
 
 import ctypes
+import ctypes.wintypes as wt
 import os
 import sys
 import time
@@ -19,8 +20,14 @@ APP_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
 SPEECH_PATH = os.path.join(APP_DIR, "speech.txt")
 LOG_PATH = os.path.join(APP_DIR, "speech_companion.log")
 
-GAME_PROCESS = "MVCI.exe"
-IDLE_EXIT_SECONDS = 120     # quit if the game never appears / has gone away
+GAME_PROCESS = "mvci.exe"
+POLL_SECONDS = 0.03          # how often speech.txt is looked at
+PROCESS_CHECK_SECONDS = 1.0  # how often we look for the game process
+STARTUP_GRACE_SECONDS = 120  # the game may take this long to show up
+# Once the game has been seen and is gone, leave at once. Steam starts this
+# program as part of the game, so for as long as it lingers Steam shows the game
+# as still running and refuses to start it again ("Game already running").
+GONE_EXIT_SECONDS = 3
 
 
 def log(msg):
@@ -59,17 +66,59 @@ def load_nvda():
     return nvda
 
 
+# --- is the game running? ---------------------------------------------------
+# Asked through the process snapshot API. This used to shell out to tasklist on
+# every pass of the loop, which took about 160 ms a time, so the "30 ms" speech
+# poll really ran five times a second and every announcement waited on it.
+
+class PROCESSENTRY32W(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", wt.DWORD), ("cntUsage", wt.DWORD), ("th32ProcessID", wt.DWORD),
+        ("th32DefaultHeapID", ctypes.c_size_t), ("th32ModuleID", wt.DWORD),
+        ("cntThreads", wt.DWORD), ("th32ParentProcessID", wt.DWORD),
+        ("pcPriClassBase", wt.LONG), ("dwFlags", wt.DWORD),
+        ("szExeFile", wt.WCHAR * 260),
+    ]
+
+
+_k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+_k32.CreateToolhelp32Snapshot.argtypes = [wt.DWORD, wt.DWORD]
+_k32.CreateToolhelp32Snapshot.restype = wt.HANDLE
+_k32.Process32FirstW.argtypes = [wt.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+_k32.Process32FirstW.restype = wt.BOOL
+_k32.Process32NextW.argtypes = [wt.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+_k32.Process32NextW.restype = wt.BOOL
+_k32.CloseHandle.argtypes = [wt.HANDLE]
+_k32.CreateMutexW.argtypes = [ctypes.c_void_p, wt.BOOL, wt.LPCWSTR]
+_k32.CreateMutexW.restype = wt.HANDLE
+
+TH32CS_SNAPPROCESS = 0x2
+INVALID_HANDLE = wt.HANDLE(-1).value
+ERROR_ALREADY_EXISTS = 183
+
+
 def game_running():
-    """True while the game process exists (so we can exit with it)."""
+    """True while the game process exists. True too if we cannot tell."""
+    snap = _k32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    if not snap or snap == INVALID_HANDLE:
+        return True
     try:
-        import subprocess
-        flags = 0x08000000  # CREATE_NO_WINDOW
-        out = subprocess.check_output(
-            ["tasklist", "/FI", "IMAGENAME eq " + GAME_PROCESS],
-            creationflags=flags, stderr=subprocess.DEVNULL)
-        return GAME_PROCESS.lower().encode() in out.lower()
-    except Exception:
-        return True  # if we cannot tell, keep running
+        entry = PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+        ok = _k32.Process32FirstW(snap, ctypes.byref(entry))
+        while ok:
+            if entry.szExeFile.lower() == GAME_PROCESS:
+                return True
+            ok = _k32.Process32NextW(snap, ctypes.byref(entry))
+        return False
+    finally:
+        _k32.CloseHandle(snap)
+
+
+def already_running():
+    """One companion only: two would speak every line twice."""
+    _k32.CreateMutexW(None, False, "Local\\MvCIAccessSpeech")
+    return ctypes.get_last_error() == ERROR_ALREADY_EXISTS
 
 
 def speak(nvda, text, interrupt):
@@ -99,21 +148,38 @@ def read_pipe():
 
 def main():
     os.makedirs(APP_DIR, exist_ok=True)
+    if already_running():
+        return 0
     nvda = load_nvda()
     if nvda is None:
         return 1
     log("companion started")
 
+    # Whatever is in the slot when the game is not running yet was left by an
+    # earlier session (the companion was started by hand): do not speak it.
     last_seq = None
-    last_seen_game = time.time()
+    if not game_running():
+        r = read_pipe()
+        last_seq = r[0] if r else None
+    # monotonic: a clock change must not stop us noticing the game has gone
+    started = time.monotonic()
+    seen_game = False
+    last_seen_game = started
+    next_check = 0.0
 
     while True:
-        # exit once the game has been gone for a while
-        if game_running():
-            last_seen_game = time.time()
-        elif time.time() - last_seen_game > IDLE_EXIT_SECONDS:
-            log("game gone - exiting")
-            return 0
+        now = time.monotonic()
+        if now >= next_check:
+            next_check = now + PROCESS_CHECK_SECONDS
+            if game_running():
+                seen_game = True
+                last_seen_game = now
+            elif seen_game and now - last_seen_game > GONE_EXIT_SECONDS:
+                log("game gone - exiting")
+                return 0
+            elif not seen_game and now - started > STARTUP_GRACE_SECONDS:
+                log("game never appeared - exiting")
+                return 0
 
         r = read_pipe()
         if r is not None:
@@ -124,7 +190,7 @@ def main():
                     speak(nvda, text, interrupt)
                 except Exception as e:
                     log("speak error: %r" % (e,))
-        time.sleep(0.03)
+        time.sleep(POLL_SECONDS)
 
 
 if __name__ == "__main__":

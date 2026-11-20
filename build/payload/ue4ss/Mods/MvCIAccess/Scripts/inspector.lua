@@ -16,8 +16,9 @@
 --
 -- Every result is written to inspector_out.txt (latest) AND appended to
 -- inspector_history.txt (so running two commands never clobbers the first).
--- All engine reflection runs on the game thread and is wrapped in pcall so a bad
--- read can never crash the game.
+-- All engine reflection runs on the game thread. Lua errors are caught by pcall,
+-- but a native access violation is NOT: bulk-reading property values, touching
+-- hidden widgets and indexing an array out of bounds can each kill the game.
 
 local M = {}
 
@@ -66,7 +67,16 @@ end
 
 -- Safe reflection helpers -------------------------------------------------
 
+-- A null object reference is a non-nil userdata, and GetClass / GetFName on
+-- one is a native crash, so everything is IsValid-checked first.
+local function live(obj)
+    if obj == nil or type(obj) ~= "userdata" then return false end
+    local ok, v = pcall(function() return obj:IsValid() end)
+    return ok and v == true
+end
+
 local function class_name(obj)
+    if not live(obj) then return "?" end
     local ok, res = pcall(function()
         return obj:GetClass():GetFName():ToString()
     end)
@@ -259,7 +269,7 @@ local function cmd_probe()
     end
     if changed == 0 then
         out[#out + 1] = "  (no visible-text change. The cursor may be a separate widget"
-        out[#out + 1] = "   or a color/state change, not text. Tell me and I will add a probe mode.)"
+        out[#out + 1] = "   or a color/state change, not text. That needs a separate probe mode.)"
     end
     probe_baseline = nil -- reset for the next pair
     return out
@@ -505,11 +515,12 @@ local STOP_CLASSES = {
     Actor = true, Pawn = true, Info = true, GameModeBase = true, GameStateBase = true,
 }
 local function class_super(cls)
+    if not live(cls) then return nil end
     local s
     local ok = pcall(function() s = cls:GetSuperStruct() end)
-    if ok and s then return s end
+    if ok and live(s) then return s end
     ok = pcall(function() s = cls:GetSuperClass() end)
-    if ok and s then return s end
+    if ok and live(s) then return s end
     return nil
 end
 
@@ -579,8 +590,8 @@ local function cmd_probeidx()
         end
     end
     if changed == 0 then
-        out[#out + 1] = "  (no scalar changed. The index name is not in my candidate list;"
-        out[#out + 1] = "   next I will enumerate properties a different way.)"
+        out[#out + 1] = "  (no scalar changed. The index name is not in the candidate list;"
+        out[#out + 1] = "   the properties need enumerating a different way.)"
     end
     out[#out + 1] = "  --- baseline had " .. count_keys(probeidx_baseline) .. " props, now " .. count_keys(cur) .. " ---"
     probeidx_baseline = nil
@@ -639,7 +650,7 @@ local function cmd_probeany()
     end
     if changed == 0 then
         out[#out + 1] = "  (nothing changed - move the cursor further between the two presses,"
-        out[#out + 1] = "   or the index is on a non-UserWidget; tell me and I will widen the scan)"
+        out[#out + 1] = "   or the index is on a non-UserWidget; the scan needs widening)"
     end
     probeany_baseline = nil
     return out
@@ -814,7 +825,7 @@ local function cmd_optdiff()
     end
     if changed == 0 then
         out[#out + 1] = "  (nothing on the option items changed - selection is not reflected"
-        out[#out + 1] = "   on them; next I will read the cursor geometry instead)"
+        out[#out + 1] = "   on them; read the cursor geometry instead)"
     end
     optdiff_baseline = nil
     return out
@@ -1561,14 +1572,115 @@ local function cmd_charsub()
     return out
 end
 
+-- Developer-only tools ----------------------------------------------------
+-- Available only when devmode.txt exists (the same gate main.lua uses), so a
+-- player's install never has them.
+--
+-- `luafile <name>` runs a Lua snippet from the data folder on the game thread
+-- and writes whatever lines it returns as the answer. That turns a new screen
+-- into a question that can be asked from outside the game, instead of a new
+-- hard-wired dump command and a restart for every one. The snippet receives the
+-- helpers below as its single argument. It is as dangerous as any other code
+-- here: the crash rules (no bulk value reads, no hidden widgets, bounds-checked
+-- arrays) apply to snippets exactly as they do to readers.
+--
+-- `reload <module>` hot-swaps one module (see main.lua).
+local DEV = false
+
+-- The reflected type of a property, e.g. "IntProperty". Reads no value.
+local function prop_type(prop)
+    local t
+    pcall(function() t = prop:GetClass():GetFName():ToString() end)
+    return t or "?"
+end
+
+-- Property names WITH their types for an object's class chain. Like
+-- enumerate_names it reads no values, so it is safe on any live object, and the
+-- type is what tells you which properties are safe to read afterwards.
+local function enumerate_typed(obj, all_classes)
+    local lines = {}
+    if not live(obj) then return { "    (invalid object)" } end
+    local cls
+    pcall(function() cls = obj:GetClass() end)
+    if not cls then return { "    (no class)" } end
+    local seen, guard = {}, 0
+    while cls and guard < 14 do
+        guard = guard + 1
+        local cn = "?"
+        pcall(function() cn = cls:GetFName():ToString() end)
+        if STOP_CLASSES[cn] and not all_classes then break end
+        if cn == "Object" then break end
+        pcall(function()
+            cls:ForEachProperty(function(prop)
+                local nm
+                pcall(function() nm = prop:GetFName():ToString() end)
+                if nm and not seen[nm] then
+                    seen[nm] = true
+                    lines[#lines + 1] = "    [" .. cn .. "] " .. nm .. " : " .. prop_type(prop)
+                end
+            end)
+        end)
+        cls = class_super(cls)
+    end
+    if #lines == 0 then lines[1] = "    (no properties)" end
+    return lines
+end
+
+local function dev_helpers()
+    return {
+        dir = OUT_DIR,
+        try = try, trim = trim,
+        class_name = class_name, full_name = full_name, path_of = path_of,
+        get_text = get_text, ftext_prop = ftext_prop, is_visible = is_visible,
+        resolve = resolve, read_xy = read_xy, slot_xy = slot_xy, actor_loc = actor_loc,
+        tarr_count = tarr_count, collect_text = collect_text,
+        enumerate_names = enumerate_names, enumerate_typed = enumerate_typed,
+        class_super = class_super, prop_type = prop_type,
+    }
+end
+
+-- `luafile <name> [argument]`: anything after the file name reaches the snippet
+-- as its second argument, so one snippet can serve many classes.
+local function cmd_luafile(spec)
+    local name, arg = spec:match("^(%S+)%s*(.*)$")
+    local out = { "luafile " .. spec }
+    local chunk, lerr = loadfile(OUT_DIR .. name)
+    if not chunk then
+        out[#out + 1] = "  load error: " .. tostring(lerr)
+        return out
+    end
+    local okc, res = pcall(chunk, dev_helpers(), arg)
+    if not okc then
+        out[#out + 1] = "  run error: " .. tostring(res)
+    elseif type(res) == "table" then
+        for _, ln in ipairs(res) do out[#out + 1] = tostring(ln) end
+    elseif res ~= nil then
+        out[#out + 1] = tostring(res)
+    end
+    return out
+end
+
 -- Dispatch (runs on game thread) -----------------------------------------
 
 local function run_command(cmd)
+    -- A leading "-" runs the command without speaking "inspector done", for
+    -- scripted runs that would otherwise talk over the screen being tested.
+    local quiet = false
+    if cmd:sub(1, 1) == "-" then
+        quiet = true
+        cmd = trim(cmd:sub(2))
+    end
     local verb, rest = cmd:match("^(%S+)%s*(.*)$")
     verb = (verb or ""):lower()
     rest = trim(rest or "")
     local out
-    if verb == "scan" then
+    if DEV and verb == "luafile" and rest ~= "" then
+        out = cmd_luafile(rest)
+    elseif DEV and verb == "reload" and rest ~= "" then
+        local okr, e = false, "no reloader installed"
+        if _G.MvCIAccess_reload then okr, e = _G.MvCIAccess_reload(rest) end
+        out = { "reload " .. rest .. " -> " .. tostring(okr) .. "  " .. tostring(e or "") }
+    elseif verb == "scan" then
         out = cmd_scan()
     elseif verb == "snapshot" or verb == "widgets" then
         out = cmd_snapshot()
@@ -1642,26 +1754,28 @@ local function run_command(cmd)
         }
     end
     write_out(out)
-    if ann then ann.speak("inspector done: " .. verb, true) end
+    if ann and not quiet then ann.speak("inspector done: " .. verb, true) end
 end
 
--- Public: run a command by name (used by hotkeys and the file poller).
+-- Public: run a command by name. MUST be called on the game thread: engine
+-- reflection is only safe there, and main.lua's tick is the only caller.
 function M.run(cmd)
     cmd = trim(cmd or "")
     if cmd == "" then return end
-    -- engine reflection must happen on the game thread
-    ExecuteInGameThread(function()
-        local ok, err = pcall(run_command, cmd)
-        if not ok then
-            write_out({ "ERROR running '" .. cmd .. "':", "  " .. tostring(err) })
-        end
-    end)
+    local ok, err = pcall(run_command, cmd)
+    if not ok then
+        write_out({ "ERROR running '" .. cmd .. "':", "  " .. tostring(err) })
+    end
 end
 
 -- Poll the command file; when a command appears, clear the file then run it.
 -- Clearing first means the next poll sees an empty file, so a command runs once;
--- writing the same command again re-runs it. The 400 ms poll rate-limits us.
+-- writing the same command again re-runs it. main.lua calls this from its
+-- game-thread tick, twice a second.
 local function poll()
+    -- Players never use the inspector, and several of its commands read
+    -- property values in bulk, which can crash the game: developer builds only.
+    if not DEV then return end
     local raw = read_file(CMD_PATH)
     if not raw then return end
     local cmd = trim(raw)
@@ -1669,22 +1783,21 @@ local function poll()
     clear_cmd()
     M.run(cmd)
 end
+M.poll = poll
 
 function M.init(announcer)
     ann = announcer
+    pcall(function()
+        local f = io.open(require("paths").file("devmode.txt"), "r")
+        if f then f:close(); DEV = true end
+    end)
     -- seed the files so NVDA has something to open
     clear_cmd()
     write_out({ "inspector ready. Write a command into inspector_cmd.txt.",
         "commands: scan | snapshot | findall <Class> | find <substr> | text [substr] | textall [substr] | probe | probeidx | tree <substr> | props <substr> | getculture | setculture [code] | class <Class>" })
-    -- Start the file poller only ONCE per game process. LoopAsync loops cannot be
-    -- cancelled, so a hot reload that re-ran init() would otherwise stack pollers.
-    if not _G.MvCIAccess_poller_started then
-        _G.MvCIAccess_poller_started = true
-        LoopAsync(400, function()
-            pcall(poll)
-            return false -- keep looping
-        end)
-    end
+    -- No poller of its own: a second LoopAsync would put file I/O on the async
+    -- thread, which races the game thread (see the threading note in main.lua).
+    -- main.lua's game-thread tick calls M.poll.
     return M
 end
 

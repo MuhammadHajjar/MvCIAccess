@@ -1,44 +1,54 @@
 # MvCIAccess
 
 An accessibility mod for **Marvel vs. Capcom: Infinite** on Steam that reads the
-game's menus out loud through NVDA.
+game through NVDA: almost every screen, and what happens in a fight.
 
-This is not full accessibility, and it is not trying to pretend otherwise. It is
-a crutch that gets you through everything around the fight, which is the part
-that was completely impossible before. The fighting itself is still on you.
+It is not full accessibility yet, and it does not pretend to be. Version 2.0 is
+the biggest step towards it so far: you can get through the whole game around
+the fight on your own, and the fight itself tells you who is fighting, who went
+down, how much health and meter everyone has, and who won. Playing the fight
+well is still on you.
 
 ## What it reads
 
-- Title screen and main menu
-- All of Settings, including Sound, System, Display and Language, with the
-  values spoken too, so you hear "Subtitles, Battle, On" and you hear it change
-  when you change it
-- Story and Battle submenus, and the Online menu
+- Title screen, main menu and every submenu, with the help line the game shows
+  under each item
+- Dialogs and warnings, with their choices, such as the one before New Game
+  overwrites your story save
+- All of Settings, including Sound, System, Display and Language, with values
+  spoken too (volume levels, checkboxes, On and Off) and re-spoken when you
+  change them
 - Keyboard Settings and Controller Settings
+- Online: Ranked Match, Casual Match, Beginners League, Lobby and Rankings
 - Stage select
 - Character select, with the fighter's name, roster side, row and column, for
-  all 36 fighters including the 6 DLC characters
-- The costume and color panel that opens once you pick a fighter
-- The Infinity Stone picker, naming all six stones and reading what each does.
-  The game never puts a stone's name in text anywhere on that screen, only a
-  picture and a description, so the name is recovered from the description
-  itself. A description that is not recognised is read without a name rather
-  than guessed at
-- Pause menu in Training, Arcade and Versus
-- Story mode's pause panel, with win conditions and active buffs
+  all 36 fighters including the 6 DLC characters, for your team and the
+  opponent's
+- The costume and color panel, the Infinity Stone picker with all six stones
+  named, and Battle Settings
+- Every pause menu, with page numbers where a menu has pages, including the
+  Story pause menu's win conditions and each fighter's boosts
 - The Command List, with the input notation decoded from the game's icons, so
   you hear "Shoryuken, dragon punch, Light Punch or Heavy Punch"
+- The Controls Guide, which is a picture in the game, written out in words
+- Tutorial tips in Story fights, and the pause screen of a Story cutscene
+- Mission Mode: the tutorial, each mission's instructions, and the task while
+  you play it
+- Collection, including the fighter biographies in The Stark-Light Library
+- The Battle Over menu after a match
+- Fights: the line-up, a fighter going down, half and low health for any
+  fighter, each new bar of meter, 30 and 10 seconds left, time up, and the
+  result
 
-## What it does not read
+## What it does not read yet
 
-- The actual match. No health, no meter, no timer, no combo counter.
-- Online submenus. The Online menu itself reads, the screens under Ranked,
-  Casual and Lobby do not.
-- Collection, so all the art, movies, sound and database screens.
-- Mission Mode.
-- HUD Position, which is a visual layout tool.
-- Which key a command is actually bound to in the controller and keyboard
-  screens, because those are drawn as pictures rather than text.
+- The versus screen before a fight.
+- Which fighters are in your Team Select presets.
+- Which key a command is bound to in the controller and keyboard screens,
+  because those are drawn as pictures rather than text.
+- A continuous sense of where the opponent is during a fight. Ctrl+Shift+P
+  tells you on demand.
+- HUD Position is read as text only; it is a visual layout tool.
 
 ## Installing
 
@@ -65,51 +75,58 @@ starts itself with the game, there is nothing extra to launch.
 
 | Key | What it does |
 | --- | --- |
-| Ctrl+Shift+A | Re-read the current selection right now |
+| Ctrl+Shift+A | Re-read the current screen right now |
 | Ctrl+Shift+Z | Repeat the last thing spoken |
 | Ctrl+Shift+G | Reload the character name overrides |
+| Ctrl+Shift+H | In a fight: health of both teams |
+| Ctrl+Shift+M | In a fight: Hyper Combo meter of both teams |
+| Ctrl+Shift+T | In a fight: time left |
+| Ctrl+Shift+P | In a fight: where the opponent is, and how far |
 
-## About the delay
+## Speed
 
-There is some latency, and some of it is a deliberate trade rather than an
-oversight. The mod inspects the game's live interface from inside the game,
-which is expensive. Polling faster made the game stutter, and at one point lock
-up. In a 60 fps fighting game a dropped frame is worse than an announcement
-arriving a moment late, so it is tuned down on purpose. If a screen is slow to
-speak, Ctrl+Shift+A reads it instantly.
-
-Some of it is not a trade though, it is just cost that has not been paid down
-yet. Developer builds time every reader, and measured over ~220 seconds of play
-the readers used about 28% of the game thread, with single probes blocking for
-13 to 35 ms against a 16.7 ms frame. The work is dominated by repeated engine
-object lookups that mostly return "my screen is not open". Cutting that down is
-the main open piece of work. Set a `devmode.txt` in the mod's data folder and it
-writes `perf.txt` with per-reader call counts and timings.
+The mod looks at the game four times a second. Up to 1.2 each look took 20 to
+45 ms of the game's own time, more than a whole frame, which showed up as
+stutter and as speech arriving late. In 2.0 a look takes about 2 ms, so it is
+roughly ten times lighter on menus and far more than that on character select.
+Developer builds measure it: put a `devmode.txt` in the mod's data folder and it
+writes `perf.txt` with per-reader timings.
 
 ## How it works
 
-UE4SS loads a Lua mod into the game. The Lua walks the live Unreal objects to
-work out which screen you are on and what is highlighted, then writes the text
-to a small file. A separate companion program, `MvCIAccessSpeech.exe`, watches
-that file and speaks it through NVDA's controller client.
+UE4SS loads a Lua mod into the game. The Lua works out which screen you are on
+and what is highlighted, then writes the text to a small file. A separate
+companion program, `MvCIAccessSpeech.exe`, watches that file and speaks it
+through NVDA's controller client.
 
 The file bridge exists for a reason: UE4SS runs plain Lua 5.4 with no FFI, so the
 mod cannot call a speech DLL directly. The companion is the part that can.
 
-Two things are worth knowing if you want to work on this:
+Things worth knowing if you want to work on this:
 
-- Reading a UObject property **value** in bulk can hard crash the game with an
-  access violation that `pcall` cannot catch. Enumerating property *names* is
-  safe. Reading specific known properties is safe.
-- Indexing a TArray out of bounds also hard crashes. Every array read here is
-  bounds checked first, and that is not paranoia, it cost a few crashes to learn.
+- `core.lua` answers "where am I" without searching the engine: the game's own
+  flow actor (`GameFlowSystem:GetFlowBP()`), its popup controller, and UMG's
+  `GetAllWidgetsOfClass`. `FindAllOf` costs about 19 ms whatever the class and
+  must never run on every tick.
+- Fight data comes from the game's own function library,
+  `/Script/Duck.Default__UIFightBPLib` (health, meter, timer, fighters,
+  positions).
+- A null object reference arrives in Lua as a non-nil userdata, and calling a
+  method on it is a native crash that `pcall` cannot catch. Check `IsValid()`
+  first, always.
+- Reading UObject property **values** in bulk, or indexing a TArray out of
+  bounds, also hard crashes. Read specific known properties, bounds check every
+  array.
+- All of a mod's Lua runs in one Lua VM. Lua that allocates on the `LoopAsync`
+  thread or inside a key-bind callback races the game thread and kills the mod.
+  All real work happens in one game-thread tick.
 
 ## Building from source
 
 You need Python 3.9 or newer with PyInstaller.
 
 ```bash
-python build/release.py 1.2.1
+python build/release.py 2.0.0
 ```
 
 That syntax checks every Lua file, copies the current scripts into the payload,
@@ -119,7 +136,7 @@ Pass the repository to keep the built-in update check pointed at the right
 place:
 
 ```bash
-python build/release.py 1.2.1 --repo MuhammadHajjar/MvCIAccess
+python build/release.py 2.0.0 --repo MuhammadHajjar/MvCIAccess
 ```
 
 Note that everything the mod loads is written UTF-8 **without** a BOM. A BOM in
@@ -133,15 +150,18 @@ build/src/MvCIAccessSetup.py     the installer
 build/src/MvCIAccessSpeech.py    the NVDA speech companion
 build/payload/                   exactly what gets installed into the game
   ue4ss/Mods/MvCIAccess/Scripts/ the mod itself
-    main.lua                     bootstrap, hotkeys, the unified poller
+    main.lua                     bootstrap, hotkeys, the one game-thread tick
+    core.lua                     where am I: flow, active menu, dialog, widgets
     announcer.lua                writes text out to the speech bridge
-    screen_*.lua                 one reader per screen
+    screen_menu.lua              every menu, list, dialog and text page
+    screen_fight.lua             fight events and the fight keys
+    screen_*.lua                 the other screens with their own readers
     inspector.lua                development-only discovery tool
 ```
 
 ## Help wanted
 
-This is not stable and it is certainly full of bugs that have not been hit yet.
+There are certainly bugs that have not been hit yet.
 
 The most useful bug report is **a screen that says nothing at all**, because
 those are usually quick to add once someone knows they exist.

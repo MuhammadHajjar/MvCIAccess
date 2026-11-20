@@ -70,14 +70,11 @@ local function num_prop(obj, name)
     return nil
 end
 
+local C = require("core")
+
+-- Every live widget of a class, through core.lua's fast lookup (no FindAllOf).
 local function all_valid(cls)
-    local out = {}
-    local arr = safe(function() return FindAllOf(cls) end)
-    if not arr then return out end
-    for i = 1, #arr do
-        if valid(arr[i]) then out[#out + 1] = arr[i] end
-    end
-    return out
+    return C.find(cls)
 end
 
 -- Collapse the newlines the game puts inside its description text, so it speaks
@@ -234,11 +231,66 @@ end
 
 -- ------------------------------------------------------------------- public
 
+-- ------------------------------------------------------------ battle settings
+-- Opened from the roster (C on the keyboard): Difficulty, Time, Damage, Fight
+-- Request, Region, Connection Strength. The character picker says when it is
+-- open (BattleSettingActive); the list widget (WD_BattleSettig_New_C, the
+-- game's own spelling) keeps its rows in ButtonArray and its cursor in
+-- FocusMenu, and each row has a label and a value TextBlock.
+local function announce_battle_settings(force)
+    local flow = C.flow()
+    local picker = flow and C.obj(flow, "CharaSelectObj")
+    if not picker or C.bool(picker, "BattleSettingActive") ~= true then return false end
+    local list = C.shown("WD_BattleSettig_New_C")
+    if not list then return false end
+    local idx = C.num(list, "FocusMenu") or 0
+    local row = C.aprop(list, "ButtonArray", idx + 1)
+    if not C.valid(row) then return false end
+    local label_tb, value_tb = C.obj(row, "TextBlock_Label"), C.obj(row, "TextBlock_Subitem")
+    local label = label_tb and C.text(label_tb)
+    if not label then return false end
+    local value = value_tb and C.text(value_tb)
+
+    local key = "bs#" .. idx .. "#" .. tostring(value)
+    if (not force) and key == last_key then return true end
+    local first = not (last_key and last_key:sub(1, 3) == "bs#")
+    last_key = key
+
+    local msg = label
+    if value then msg = msg .. ": " .. value end
+    msg = msg .. ", " .. (idx + 1) .. " of " .. (C.aprop_len(list, "ButtonArray") or 0) .. "."
+    if first or force then msg = "Battle settings. " .. msg end
+    if ann then ann.speak(msg, true) end
+    return true
+end
+
+-- Which panel is open comes from the select level's flow actor, not from what
+-- is visible: both panels stay "visible" after they close, so on a second
+-- visit a stale costume panel used to answer for the roster and for the stone
+-- picker alike. NaviType: 1 stage select, 2 roster, 4 stone picker, 6 costume
+-- and colour panel.
+local NAVI_STONE, NAVI_COSTUME = 4, 6
+
 function M.announce_now(force)
-    if announce_costume(force) then return true end
-    if announce_gem(force) then return true end
+    if announce_battle_settings(force) then return true end
+    local flow = C.flow()
+    local navi = flow and C.num(flow, "NaviType")
+    if navi == NAVI_COSTUME then
+        if announce_costume(force) then return true end
+    elseif navi == NAVI_STONE then
+        if announce_gem(force) then return true end
+    elseif navi == nil then
+        -- a flow without NaviType (Team Setup): fall back to what is showing
+        if announce_costume(force) then return true end
+        if announce_gem(force) then return true end
+    end
     last_key = nil   -- neither is open, so re-entering announces again
     return false
+end
+
+-- Another reader has the screen: forget the last announcement.
+function M.closed()
+    last_key = nil
 end
 
 function M.init(announcer)
